@@ -1,4 +1,4 @@
-use actix_web::{web, App, HttpRequest, HttpServer, Responder};
+use actix_web::{web, App, HttpRequest, HttpServer, HttpResponse, Responder};
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -8,7 +8,7 @@ struct IpInfo {
     user_agent: Option<String>,
 }
 
-async fn get_ip_info(req: HttpRequest) -> impl Responder {
+async fn ip_info(req: HttpRequest) -> IpInfo {
     let client_ip = req.peer_addr()
         .map(|addr| addr.ip().to_string())
         .unwrap_or_else(|| "Unknown".to_string());
@@ -32,7 +32,20 @@ async fn get_ip_info(req: HttpRequest) -> impl Responder {
         user_agent,
     };
 
-    web::Json(ip_info)
+    ip_info
+}
+
+async fn get_ip_simple(req: HttpRequest) -> impl Responder {
+    let info = ip_info(req).await;
+    let ip = info.forwarded_ip.unwrap_or(info.client_ip);
+
+    HttpResponse::Ok()
+        .content_type("text/plain")
+        .body(ip)
+}
+
+async fn get_ip_json(req: HttpRequest) -> impl Responder {
+    web::Json(ip_info(req).await)
 }
 
 #[actix_web::main]
@@ -41,7 +54,8 @@ async fn main() -> std::io::Result<()> {
 
     HttpServer::new(|| {
         App::new()
-            .route("/ipinfo", web::get().to(get_ip_info))
+            .route("/ip", web::get().to(get_ip_simple))
+            .route("/ip/json", web::get().to(get_ip_json))
     })
     .bind("127.0.0.1:4013")?
     .run()
